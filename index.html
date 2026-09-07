@@ -65,7 +65,18 @@
   .pair > :first-child{flex:1;min-width:0}
   .money{position:relative;width:132px;flex:none}
   .money span{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:15px}
-  #amount{padding-left:27px;font-size:19px;font-weight:600}
+  #amount{padding-left:27px;padding-right:32px;font-size:19px;font-weight:600}
+
+  /* iOS 數字鍵盤沒有地球鍵與麥克風，這顆鈕用來切到完整鍵盤 */
+  #kbd{
+    position:absolute;right:5px;top:50%;transform:translateY(-50%);
+    width:26px;height:26px;appearance:none;border:0;background:transparent;
+    color:var(--muted);opacity:.55;padding:0;display:grid;place-items:center;
+    cursor:pointer;transition:.14s;
+  }
+  #kbd svg{width:16px;height:16px;display:block}
+  #kbd:active{transform:translateY(-50%) scale(.88)}
+  #kbd.on{color:var(--accent);opacity:1}
 
   /* 第 3 排：分類（單排橫向捲動，常用的自動排前面）＋ 展開鈕 */
   .catwrap{position:relative;display:flex;align-items:center;gap:3px;margin-bottom:11px}
@@ -137,7 +148,17 @@
   </div>
   <div class="pair">
     <input class="inp" id="what" type="text" placeholder="買什麼" enterkeyhint="next">
-    <div class="money"><span>$</span><input class="inp" id="amount" type="text" inputmode="decimal" placeholder="0" enterkeyhint="done"></div>
+    <div class="money">
+      <span>$</span>
+      <input class="inp" id="amount" type="text" inputmode="decimal" placeholder="0" enterkeyhint="done">
+      <button id="kbd" type="button" aria-label="切換完整鍵盤，可使用語音輸入">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <rect x="9" y="2.5" width="6" height="11.5" rx="3" stroke="currentColor" stroke-width="1.9"/>
+          <path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3.5" stroke="currentColor"
+                stroke-width="1.9" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>
   </div>
   <div class="catwrap">
     <div class="scroller">
@@ -316,11 +337,26 @@ $('save').onclick = async () => {
   if (picked.type){ counts[picked.type] = (counts[picked.type]||0)+1; store.set(CKEY, JSON.stringify(counts)); }
   addLog(summary);
   $('what').value=''; $('amount').value='';       // 人與分類保留，方便連續記帳
+  $('amount').inputMode = 'decimal';              // 下一筆回到數字鍵盤（不 focus，避免鍵盤自己彈出）
+  $('kbd').classList.remove('on');
   renderCats();
 };
 
 $('what').addEventListener('keydown', e => { if (e.key==='Enter') $('amount').focus(); });
 $('amount').addEventListener('keydown', e => { if (e.key==='Enter') $('save').click(); });
+
+/* 金額欄預設是 iOS 的數字九宮格（好按、三下打完），但那個鍵盤沒有地球鍵
+   和麥克風。這顆鈕把欄位暫時切成一般文字模式，叫出完整鍵盤，底部就有
+   切換輸入法與語音聽寫。blur → 改 inputMode → focus 必須同步執行，
+   否則 iOS 不會重新叫出鍵盤。                                        */
+function setAmountKeyboard(mode){
+  const a = $('amount');
+  a.blur();
+  a.inputMode = mode;
+  $('kbd').classList.toggle('on', mode === 'text');
+  a.focus();
+}
+$('kbd').onclick = () => setAmountKeyboard($('amount').inputMode === 'text' ? 'decimal' : 'text');
 
 renderPending(); flush();
 
