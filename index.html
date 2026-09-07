@@ -28,11 +28,18 @@
     font:16px/1.4 -apple-system,"PingFang TC","Helvetica Neue",sans-serif;
     min-height:100dvh;padding-bottom:env(safe-area-inset-bottom);
   }
-  /* 往上滑關閉時：整頁向下滑出 */
-  body.leaving{
-    transform:translateY(105%);opacity:.5;
-    transition:transform .38s cubic-bezier(.4,0,1,1), opacity .38s;
+  /* 往上滑收起時：內容整塊向下滑出（#done 留在原地不跟著動） */
+  #page{transition:transform .38s cubic-bezier(.4,0,1,1), opacity .38s}
+  /* 用 100vh 而非 105%：百分比是相對元素自身高度，內容少時會滑不出畫面 */
+  #page.leaving{transform:translateY(100vh);opacity:.4}
+
+  /* 收起後的提示，避免畫面全空看起來像壞掉 */
+  #done{
+    position:fixed;inset:0;display:grid;place-items:center;
+    color:var(--muted);font-size:14px;letter-spacing:.6px;
+    opacity:0;pointer-events:none;transition:opacity .3s .2s;
   }
+  #done.show{opacity:.75}
 
   /* ── 上半部：從畫面頂端滑下的輸入卡 ───────────────── */
   .sheet{
@@ -150,6 +157,7 @@
 </style>
 </head>
 <body>
+<div id="page">
 
 <div class="sheet">
   <div class="grip"></div>
@@ -186,9 +194,13 @@
 </div>
 
 <div class="homebar" id="homebar">
-  <div class="hint">往上滑 · 關閉並鎖定</div>
+  <div class="hint">往上滑 · 收起</div>
   <div class="pill"></div>
 </div>
+
+</div><!-- /#page -->
+
+<div id="done">記完了 · 按側邊按鈕鎖定螢幕</div>
 
 <script>
 const FORM = 'https://docs.google.com/forms/d/e/1FAIpQLSfjr8XBxwKH7Op2yxthGAol5vPFwjpe_g4F-0yp1t8LMoGN1w/formResponse';
@@ -326,13 +338,13 @@ $('save').onclick = async () => {
 $('what').addEventListener('keydown', e => { if (e.key==='Enter') $('amount').focus(); });
 $('amount').addEventListener('keydown', e => { if (e.key==='Enter') $('save').click(); });
 
-/* ── Home Indicator：往上滑 → 整頁向下滑出 → 呼叫捷徑鎖定螢幕 ──
-   網頁本身無法關閉自己、也無權鎖定手機，所以最後一步交給捷徑。
-   LOCK_SHORTCUT 必須和你在「捷徑」App 裡建立的名稱完全一致。       */
-const LOCK_SHORTCUT = '鎖定';
+/* ── Home Indicator：往上滑 → 內容向下滑出收起 ──
+   網頁無權關閉自己的分頁，也無權鎖定手機，所以這裡只負責「讓開畫面」，
+   鎖定交給實體側邊按鈕（一次按壓，比任何軟體方案都快且沒有確認框）。 */
 const SWIPE_THRESHOLD = 45;          // 往上滑超過幾 px 才算數
 
 const bar = $('homebar');
+const page = $('page');
 let startY = null, dy = 0;
 
 bar.addEventListener('pointerdown', e => {
@@ -343,38 +355,32 @@ bar.addEventListener('pointermove', e => {
   if (startY === null) return;
   dy = startY - e.clientY;                                   // 往上滑為正值
   if (dy > 0) {                                              // 讓畫面跟著手指走一點，有拉扯感
-    document.body.style.transform = `translateY(${-Math.min(dy, 90) * 0.35}px)`;
+    page.style.transform = `translateY(${-Math.min(dy, 90) * 0.35}px)`;
     bar.classList.toggle('armed', dy >= SWIPE_THRESHOLD);
   }
 });
 bar.addEventListener('pointerup', () => {
-  document.body.style.transform = '';
+  page.style.transform = '';
   if (dy >= SWIPE_THRESHOLD) dismiss();
   else bar.classList.remove('armed');
   startY = null;
 });
 bar.addEventListener('pointercancel', () => {
-  document.body.style.transform = ''; bar.classList.remove('armed'); startY = null;
+  page.style.transform = ''; bar.classList.remove('armed'); startY = null;
 });
-
-/* 用一個真正的 <a> 連結來觸發捷徑，而且必須在使用者手勢的「同一個事件週期內」
-   執行。若改用 setTimeout 延遲跳轉，會脫離手勢，Safari 幾乎一定會跳出
-   「要在『捷徑』中打開此網頁嗎？」的確認框。                                */
-const lockLink = document.createElement('a');
-lockLink.href = 'shortcuts://run-shortcut?name=' + encodeURIComponent(LOCK_SHORTCUT);
-lockLink.style.cssText = 'position:absolute;width:1px;height:1px;opacity:0;pointer-events:none';
-document.body.appendChild(lockLink);
 
 function dismiss(){
   bar.classList.remove('armed');
-  document.body.classList.add('leaving');   // 滑出動畫與跳轉同時進行，不等待
-  lockLink.click();
+  page.classList.add('leaving');      // 內容向下滑出
+  $('done').classList.add('show');    // 露出「按側邊按鈕鎖定」提示
+  try { window.close(); } catch (e) {}  // 分頁若是被 script 開的就會關掉，多數情況不會
 }
 
-// 從鎖定畫面回到這一頁時，把滑出狀態還原，否則頁面會是空白的
+// 回到這一頁時把收起狀態還原，否則下次看到的會是空畫面
 const restore = () => {
-  document.body.classList.remove('leaving');
-  document.body.style.transform = '';
+  page.classList.remove('leaving');
+  page.style.transform = '';
+  $('done').classList.remove('show');
 };
 addEventListener('pageshow', restore);
 addEventListener('visibilitychange', () => { if (!document.hidden) restore(); });
