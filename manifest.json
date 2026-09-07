@@ -1,0 +1,10 @@
+{
+  "name": "羊羊熊熊記帳",
+  "short_name": "記帳",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#efe9de",
+  "theme_color": "#efe9de"
+}

@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="記帳">
+<meta name="theme-color" content="#efe9de">
+<link rel="manifest" href="manifest.json">
+<title>羊羊熊熊記帳</title>
+<style>
+  :root{
+    --bg:#efe9de; --card:#fff; --ink:#2f2a24; --muted:#9a9085;
+    --sunk:#f2eee7; --line:#e0d7c8; --accent:#c8763c; --accent-ink:#fff;
+    --ok:#3f8f5f; --warn:#b4622a;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#151210; --card:#241f1b; --ink:#f0e9df; --muted:#948a7f;
+      --sunk:#1c1815; --line:#3a322b; --accent:#e08a4b; --accent-ink:#1a1714;
+      --ok:#6fbf8c; --warn:#e0a06b;
+    }
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{
+    margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.4 -apple-system,"PingFang TC","Helvetica Neue",sans-serif;
+  }
+
+  /* ── 上半部：從畫面頂端滑下的輸入卡 ───────────────── */
+  .sheet{
+    position:relative;z-index:10;
+    background:var(--card);border-radius:0 0 22px 22px;
+    padding:calc(10px + env(safe-area-inset-top)) 14px 14px;
+    box-shadow:0 8px 28px rgba(0,0,0,.13);
+    animation:drop .3s cubic-bezier(.2,.9,.3,1);
+  }
+  @keyframes drop{from{transform:translateY(-101%)}to{transform:none}}
+  @media (prefers-reduced-motion:reduce){.sheet{animation:none}}
+  .grip{width:38px;height:4px;border-radius:2px;background:var(--line);margin:0 auto 12px}
+
+  /* 第 1 排：誰買（分段控制）＋ 日期 */
+  .top{display:flex;gap:10px;align-items:center;margin-bottom:9px}
+  .seg{display:flex;background:var(--sunk);border-radius:10px;padding:3px;flex:1}
+  .seg button{
+    flex:1;appearance:none;border:0;background:transparent;color:var(--muted);
+    font:inherit;font-size:14px;font-weight:500;padding:7px 2px;border-radius:8px;cursor:pointer;
+    transition:.14s;
+  }
+  .seg button[aria-pressed=true]{background:var(--accent);color:var(--accent-ink);font-weight:600}
+  .seg button:active{transform:scale(.95)}
+  #date{
+    background:var(--sunk);border:0;border-radius:10px;color:var(--muted);
+    font:inherit;font-size:13px;padding:8px 6px;width:112px;text-align:center;
+  }
+
+  /* 第 2 排：項目 ＋ 金額 */
+  .pair{display:flex;gap:9px;margin-bottom:9px}
+  .inp{
+    background:var(--sunk);border:1.5px solid transparent;border-radius:11px;
+    color:var(--ink);font:inherit;padding:12px 13px;width:100%;
+  }
+  .inp:focus{outline:none;border-color:var(--accent);background:var(--card)}
+  .pair > :first-child{flex:1;min-width:0}
+  .money{position:relative;width:132px;flex:none}
+  .money span{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:15px}
+  #amount{padding-left:27px;font-size:19px;font-weight:600}
+
+  /* 第 3 排：分類（單排橫向捲動，常用的自動排前面）＋ 展開鈕 */
+  .catwrap{position:relative;display:flex;align-items:center;gap:3px;margin-bottom:11px}
+  .scroller{position:relative;flex:1;min-width:0}
+  .cats{display:flex;gap:7px;overflow-x:auto;scrollbar-width:none;padding:1px 20px 1px 1px;scroll-snap-type:x proximity}
+  .cats::-webkit-scrollbar{display:none}
+  .chip{
+    flex:none;scroll-snap-align:start;appearance:none;border:1.5px solid var(--line);
+    background:var(--card);color:var(--ink);font:inherit;font-size:13.5px;
+    padding:8px 13px;border-radius:9px;cursor:pointer;white-space:nowrap;transition:.12s;
+  }
+  .chip[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+  .chip:active{transform:scale(.94)}
+  .fade{position:absolute;right:0;top:0;bottom:0;width:20px;pointer-events:none;
+    background:linear-gradient(90deg,transparent,var(--card))}
+
+  /* 展開鈕：固定在最右邊不會被捲走。視覺 21px，但點擊範圍 34px 好按 */
+  #more{
+    flex:none;width:34px;height:34px;appearance:none;border:0;background:transparent;
+    color:var(--muted);padding:0;cursor:pointer;display:grid;place-items:center;transition:.14s;
+  }
+  #more svg{width:21px;height:21px;display:block;transition:transform .2s}
+  #more:active{transform:scale(.9)}
+  #more[aria-expanded=true]{color:var(--accent)}
+  #more[aria-expanded=true] svg{transform:rotate(90deg)}
+
+  /* 展開後的全分類面板 */
+  #backdrop{position:fixed;inset:0;z-index:1;background:rgba(0,0,0,.28);animation:fade .15s}
+  #pop{
+    position:absolute;z-index:2;left:0;right:0;top:calc(100% + 8px);
+    background:var(--card);border:1.5px solid var(--line);border-radius:14px;padding:9px;
+    box-shadow:0 12px 32px rgba(0,0,0,.2);
+    display:grid;grid-template-columns:repeat(3,1fr);gap:7px;
+    animation:pop .16s cubic-bezier(.2,.9,.3,1);
+  }
+  #pop .chip{width:100%;text-align:center;padding:10px 4px}
+  #pop[hidden],#backdrop[hidden]{display:none}
+  @keyframes fade{from{opacity:0}}
+  @keyframes pop{from{opacity:0;transform:translateY(-8px)}}
+
+  /* 第 4 排：儲存（成功訊息直接長在按鈕上，不另外蓋浮層） */
+  #save{
+    width:100%;background:var(--accent);color:var(--accent-ink);border:0;border-radius:12px;
+    font:inherit;font-size:17px;font-weight:600;padding:14px;cursor:pointer;transition:.15s;
+  }
+  #save:active{opacity:.85}
+  #save.ok{background:var(--ok)}
+  #save.err{background:var(--warn)}
+
+  /* ── 下半部：鍵盤區／已記錄，被蓋住也沒關係 ───────── */
+  .below{padding:16px 20px 40px;max-width:480px;margin:0 auto}
+  #pending{font-size:12.5px;color:var(--warn);text-align:center;margin-bottom:10px}
+  .below h2{font-size:12px;color:var(--muted);font-weight:400;margin:0 0 7px 2px;letter-spacing:.6px}
+  ul{margin:0;padding:0}
+  li{list-style:none;font-size:13.5px;color:var(--muted);padding:5px 2px;display:flex;justify-content:space-between;gap:12px}
+  li span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .empty{justify-content:center;opacity:.6}
+  @media (min-width:520px){.sheet{max-width:480px;margin:0 auto;border-radius:0 0 22px 22px}}
+</style>
+</head>
+<body>
+
+<div class="sheet">
+  <div class="grip"></div>
+  <div class="top">
+    <div class="seg" id="who"></div>
+    <input type="date" id="date">
+  </div>
+  <div class="pair">
+    <input class="inp" id="what" type="text" placeholder="買什麼" enterkeyhint="next">
+    <div class="money"><span>$</span><input class="inp" id="amount" type="text" inputmode="decimal" placeholder="0" enterkeyhint="done"></div>
+  </div>
+  <div class="catwrap">
+    <div class="scroller">
+      <div class="cats" id="type"></div>
+      <div class="fade"></div>
+    </div>
+    <button id="more" type="button" aria-expanded="false" aria-label="展開全部分類">
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <circle cx="12" cy="12" r="9.4" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M10.6 8.4l3.6 3.6-3.6 3.6" stroke="currentColor" stroke-width="1.9"
+              stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+    <div id="backdrop" hidden></div>
+    <div id="pop" hidden></div>
+  </div>
+  <button id="save">儲存</button>
+</div>
+
+<div class="below">
+  <div id="pending"></div>
+  <h2>本次已記錄</h2>
+  <ul id="log"><li class="empty">還沒有紀錄</li></ul>
+</div>
+
+<script>
+const FORM = 'https://docs.google.com/forms/d/e/1FAIpQLSfjr8XBxwKH7Op2yxthGAol5vPFwjpe_g4F-0yp1t8LMoGN1w/formResponse';
+const F = { who:'entry.460843070', y:'entry.1810063550_year', m:'entry.1810063550_month',
+            d:'entry.1810063550_day', what:'entry.655873825', amount:'entry.1167212146',
+            type:'entry.484035811' };
+const WHO = ['洋','熊','共同'];                       // 顯示用；「共同」送出時換回「共同帳戶」
+const WHO_VALUE = { '洋':'洋', '熊':'熊', '共同':'共同帳戶' };
+const TYPES = ['吃吃喝喝','買菜','日用','超市','交通','住宿','玩樂旅遊','保險','一起成長','育兒'];
+const QKEY='jz_queue', WKEY='jz_who', CKEY='jz_counts';
+
+const $ = id => document.getElementById(id);
+const counts = JSON.parse(localStorage.getItem(CKEY) || '{}');
+let picked = { who: localStorage.getItem(WKEY) || '', type: '' };
+
+// 誰買：分段控制
+WHO.forEach(v => {
+  const b = document.createElement('button');
+  b.type='button'; b.textContent=v; b.setAttribute('aria-pressed', picked.who===v);
+  b.onclick = () => {
+    picked.who = v; localStorage.setItem(WKEY, v);
+    [...$('who').children].forEach(c => c.setAttribute('aria-pressed', c.textContent===v));
+  };
+  $('who').appendChild(b);
+});
+
+// 分類：橫向捲動排，常用的自動排到最前面，最常按的幾個永遠不用捲
+function chip(v, onPick){
+  const b = document.createElement('button');
+  b.type='button'; b.className='chip'; b.textContent=v;
+  b.setAttribute('aria-pressed', picked.type===v);
+  b.onclick = onPick;
+  return b;
+}
+function setType(v){
+  picked.type = picked.type===v ? '' : v;    // 再點一次可取消
+  syncCats();
+}
+function syncCats(){
+  [...$('type').children, ...$('pop').children]
+    .forEach(c => c.setAttribute('aria-pressed', c.textContent===picked.type));
+  // 從面板選到的分類，把捲動排捲過去讓你看得到選中狀態
+  const sel = [...$('type').children].find(c => c.textContent===picked.type);
+  if (sel) sel.scrollIntoView({inline:'center', block:'nearest', behavior:'smooth'});
+}
+function renderCats(){
+  const sorted = [...TYPES].sort((a,b) => (counts[b]||0) - (counts[a]||0));
+  $('type').innerHTML = '';
+  sorted.forEach(v => $('type').appendChild(chip(v, () => setType(v))));
+}
+
+// 展開面板：固定用原始順序，每次打開位置都一樣，好找
+function renderPop(){
+  $('pop').innerHTML = '';
+  TYPES.forEach(v => $('pop').appendChild(chip(v, () => { setType(v); closePop(); })));
+}
+const openPop  = () => { renderPop(); $('pop').hidden=false; $('backdrop').hidden=false; $('more').setAttribute('aria-expanded','true'); };
+const closePop = () => { $('pop').hidden=true; $('backdrop').hidden=true; $('more').setAttribute('aria-expanded','false'); };
+$('more').onclick = () => $('pop').hidden ? openPop() : closePop();
+$('backdrop').onclick = closePop;
+addEventListener('keydown', e => { if (e.key==='Escape') closePop(); });
+
+renderCats();
+
+const today = new Date();
+$('date').value = new Date(today.getTime() - today.getTimezoneOffset()*6e4).toISOString().slice(0,10);
+
+function buildPayload(){
+  const [y,m,d] = $('date').value.split('-');
+  const p = new URLSearchParams();
+  p.append(F.who, WHO_VALUE[picked.who]);
+  p.append(F.y,y); p.append(F.m,String(+m)); p.append(F.d,String(+d));
+  p.append(F.what, $('what').value.trim());
+  p.append(F.amount, $('amount').value.trim());
+  if (picked.type) p.append(F.type, picked.type);
+  p.append('submit','Submit');
+  return p.toString();
+}
+
+// 同一份檔案兩種掛法都能跑：
+// ・掛在 Apps Script → 交給伺服器端 submitEntry() 送，完全不受瀏覽器 CORS 限制
+// ・掛在一般靜態空間 → 由瀏覽器直接送到表單
+const onGAS = typeof google !== 'undefined' && google.script && google.script.run;
+const send = body => onGAS
+  ? new Promise((ok, fail) =>
+      google.script.run.withSuccessHandler(ok).withFailureHandler(fail).submitEntry(body))
+  : fetch(FORM, {method:'POST', mode:'no-cors',
+      headers:{'Content-Type':'application/x-www-form-urlencoded'}, body});
+
+const queue = () => JSON.parse(localStorage.getItem(QKEY) || '[]');
+const setQueue = q => { localStorage.setItem(QKEY, JSON.stringify(q)); renderPending(); };
+function renderPending(){
+  const n = queue().length;
+  $('pending').textContent = n ? `⚠️ ${n} 筆待補送，有網路時自動送出` : '';
+}
+async function flush(){
+  let q = queue();
+  while (q.length){ try { await send(q[0]); q.shift(); setQueue(q); } catch { break; } }
+}
+addEventListener('online', flush);
+
+// 回饋直接顯示在儲存鈕上，不蓋浮層、不推擠版面
+function flash(msg, cls){
+  const b = $('save');
+  b.textContent = msg; b.className = cls;
+  clearTimeout(b._t); b._t = setTimeout(() => { b.textContent='儲存'; b.className=''; }, 1600);
+}
+
+function addLog(text){
+  const ul = $('log');
+  if (!ul.dataset.on){ ul.innerHTML=''; ul.dataset.on='1'; }
+  const li = document.createElement('li');
+  li.innerHTML = `<span>${text}</span><span>${new Date().toTimeString().slice(0,5)}</span>`;
+  ul.prepend(li);
+}
+
+$('save').onclick = async () => {
+  const what = $('what').value.trim(), amount = $('amount').value.trim();
+  if (!picked.who) return flash('請先選誰買的','err');
+  if (!what)       return flash('請填買什麼','err');
+  if (!amount || isNaN(Number(amount))) return flash('金額要是數字','err');
+
+  const body = buildPayload();
+  const summary = `${WHO_VALUE[picked.who]} ${what} $${amount}${picked.type ? ' · '+picked.type : ''}`;
+
+  try { await send(body); flash('✓ 已記帳','ok'); }
+  catch { setQueue([...queue(), body]); flash('沒網路，已暫存','err'); }
+
+  if (picked.type){ counts[picked.type] = (counts[picked.type]||0)+1; localStorage.setItem(CKEY, JSON.stringify(counts)); }
+  addLog(summary);
+  $('what').value=''; $('amount').value='';       // 人與分類保留，方便連續記帳
+  renderCats();
+};
+
+$('what').addEventListener('keydown', e => { if (e.key==='Enter') $('amount').focus(); });
+$('amount').addEventListener('keydown', e => { if (e.key==='Enter') $('save').click(); });
+
+renderPending(); flush();
+
+// 註冊 Service Worker：讓頁面存進手機，之後開啟不必等網路。
+// （掛在 Apps Script 時沒有 sw.js，註冊會失敗，直接忽略即可）
+if ('serviceWorker' in navigator) {
+  addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+}
+</script>
+</body>
+</html>

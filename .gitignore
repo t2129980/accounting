@@ -1,0 +1,6 @@
+# 本機開發設定
+.claude/
+
+# 不上線的檔案
+Code.gs
+index-large.html
