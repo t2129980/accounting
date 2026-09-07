@@ -357,12 +357,18 @@ bar.addEventListener('pointercancel', () => {
   document.body.style.transform = ''; bar.classList.remove('armed'); startY = null;
 });
 
+/* 用一個真正的 <a> 連結來觸發捷徑，而且必須在使用者手勢的「同一個事件週期內」
+   執行。若改用 setTimeout 延遲跳轉，會脫離手勢，Safari 幾乎一定會跳出
+   「要在『捷徑』中打開此網頁嗎？」的確認框。                                */
+const lockLink = document.createElement('a');
+lockLink.href = 'shortcuts://run-shortcut?name=' + encodeURIComponent(LOCK_SHORTCUT);
+lockLink.style.cssText = 'position:absolute;width:1px;height:1px;opacity:0;pointer-events:none';
+document.body.appendChild(lockLink);
+
 function dismiss(){
   bar.classList.remove('armed');
-  document.body.classList.add('leaving');                    // 向下滑出動畫
-  setTimeout(() => {
-    location.href = 'shortcuts://run-shortcut?name=' + encodeURIComponent(LOCK_SHORTCUT);
-  }, 380);
+  document.body.classList.add('leaving');   // 滑出動畫與跳轉同時進行，不等待
+  lockLink.click();
 }
 
 // 從鎖定畫面回到這一頁時，把滑出狀態還原，否則頁面會是空白的
