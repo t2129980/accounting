@@ -26,6 +26,12 @@
   body{
     margin:0;background:var(--bg);color:var(--ink);
     font:16px/1.4 -apple-system,"PingFang TC","Helvetica Neue",sans-serif;
+    min-height:100dvh;display:flex;flex-direction:column;
+  }
+  /* 往上滑關閉時：整頁向下滑出 */
+  body.leaving{
+    transform:translateY(105%);opacity:.5;
+    transition:transform .38s cubic-bezier(.4,0,1,1), opacity .38s;
   }
 
   /* ── 上半部：從畫面頂端滑下的輸入卡 ───────────────── */
@@ -116,13 +122,29 @@
   #save.err{background:var(--warn)}
 
   /* ── 下半部：鍵盤區／已記錄，被蓋住也沒關係 ───────── */
-  .below{padding:16px 20px 40px;max-width:480px;margin:0 auto}
+  .below{padding:16px 20px 24px;max-width:480px;margin:0 auto;width:100%;flex:1}
   #pending{font-size:12.5px;color:var(--warn);text-align:center;margin-bottom:10px}
   .below h2{font-size:12px;color:var(--muted);font-weight:400;margin:0 0 7px 2px;letter-spacing:.6px}
   ul{margin:0;padding:0}
   li{list-style:none;font-size:13.5px;color:var(--muted);padding:5px 2px;display:flex;justify-content:space-between;gap:12px}
   li span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .empty{justify-content:center;opacity:.6}
+
+  /* ── 最底部：仿 iPhone Home Indicator，往上滑關閉並鎖定 ── */
+  .homebar{
+    margin-top:auto;padding:16px 0 calc(11px + env(safe-area-inset-bottom));
+    display:flex;flex-direction:column;align-items:center;gap:9px;
+    touch-action:none;user-select:none;-webkit-user-select:none;cursor:grab;
+  }
+  .homebar .hint{
+    font-size:11px;letter-spacing:.6px;color:var(--muted);opacity:.5;transition:.2s;
+  }
+  .homebar .pill{
+    width:132px;height:5px;border-radius:3px;background:var(--muted);opacity:.45;transition:.2s;
+  }
+  .homebar.armed .pill{width:152px;opacity:1;background:var(--accent)}
+  .homebar.armed .hint{opacity:1;color:var(--accent)}
+
   @media (min-width:520px){.sheet{max-width:480px;margin:0 auto;border-radius:0 0 22px 22px}}
 </style>
 </head>
@@ -160,6 +182,11 @@
   <div id="pending"></div>
   <h2>本次已記錄</h2>
   <ul id="log"><li class="empty">還沒有紀錄</li></ul>
+</div>
+
+<div class="homebar" id="homebar">
+  <div class="hint">往上滑 · 關閉並鎖定</div>
+  <div class="pill"></div>
 </div>
 
 <script>
@@ -297,6 +324,53 @@ $('save').onclick = async () => {
 
 $('what').addEventListener('keydown', e => { if (e.key==='Enter') $('amount').focus(); });
 $('amount').addEventListener('keydown', e => { if (e.key==='Enter') $('save').click(); });
+
+/* ── Home Indicator：往上滑 → 整頁向下滑出 → 呼叫捷徑鎖定螢幕 ──
+   網頁本身無法關閉自己、也無權鎖定手機，所以最後一步交給捷徑。
+   LOCK_SHORTCUT 必須和你在「捷徑」App 裡建立的名稱完全一致。       */
+const LOCK_SHORTCUT = '鎖定';
+const SWIPE_THRESHOLD = 45;          // 往上滑超過幾 px 才算數
+
+const bar = $('homebar');
+let startY = null, dy = 0;
+
+bar.addEventListener('pointerdown', e => {
+  startY = e.clientY; dy = 0;
+  bar.setPointerCapture(e.pointerId);
+});
+bar.addEventListener('pointermove', e => {
+  if (startY === null) return;
+  dy = startY - e.clientY;                                   // 往上滑為正值
+  if (dy > 0) {                                              // 讓畫面跟著手指走一點，有拉扯感
+    document.body.style.transform = `translateY(${-Math.min(dy, 90) * 0.35}px)`;
+    bar.classList.toggle('armed', dy >= SWIPE_THRESHOLD);
+  }
+});
+bar.addEventListener('pointerup', () => {
+  document.body.style.transform = '';
+  if (dy >= SWIPE_THRESHOLD) dismiss();
+  else bar.classList.remove('armed');
+  startY = null;
+});
+bar.addEventListener('pointercancel', () => {
+  document.body.style.transform = ''; bar.classList.remove('armed'); startY = null;
+});
+
+function dismiss(){
+  bar.classList.remove('armed');
+  document.body.classList.add('leaving');                    // 向下滑出動畫
+  setTimeout(() => {
+    location.href = 'shortcuts://run-shortcut?name=' + encodeURIComponent(LOCK_SHORTCUT);
+  }, 380);
+}
+
+// 從鎖定畫面回到這一頁時，把滑出狀態還原，否則頁面會是空白的
+const restore = () => {
+  document.body.classList.remove('leaving');
+  document.body.style.transform = '';
+};
+addEventListener('pageshow', restore);
+addEventListener('visibilitychange', () => { if (!document.hidden) restore(); });
 
 renderPending(); flush();
 
