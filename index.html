@@ -213,15 +213,24 @@ const TYPES = ['吃吃喝喝','買菜','日用','超市','交通','住宿','玩�
 const QKEY='jz_queue', WKEY='jz_who', CKEY='jz_counts';
 
 const $ = id => document.getElementById(id);
-const counts = JSON.parse(localStorage.getItem(CKEY) || '{}');
-let picked = { who: localStorage.getItem(WKEY) || '', type: '' };
+
+/* localStorage 在某些情境（私密瀏覽、封鎖網站資料）會直接拋錯，
+   包一層避免一個例外就讓整頁的按鈕全部失效。                     */
+const store = {
+  get(k, fallback){ try { const v = localStorage.getItem(k); return v === null ? fallback : v; } catch { return fallback; } },
+  set(k, v){ try { localStorage.setItem(k, v); return true; } catch { return false; } }
+};
+let swFailed = false;                 // Service Worker 註冊失敗 → 多半是私密瀏覽
+
+const counts = JSON.parse(store.get(CKEY, '{}'));
+let picked = { who: store.get(WKEY, ''), type: '' };
 
 // 誰買：分段控制
 WHO.forEach(v => {
   const b = document.createElement('button');
   b.type='button'; b.textContent=v; b.setAttribute('aria-pressed', picked.who===v);
   b.onclick = () => {
-    picked.who = v; localStorage.setItem(WKEY, v);
+    picked.who = v; store.set(WKEY, v);
     [...$('who').children].forEach(c => c.setAttribute('aria-pressed', c.textContent===v));
   };
   $('who').appendChild(b);
@@ -290,11 +299,16 @@ const send = body => onGAS
   : fetch(FORM, {method:'POST', mode:'no-cors',
       headers:{'Content-Type':'application/x-www-form-urlencoded'}, body});
 
-const queue = () => JSON.parse(localStorage.getItem(QKEY) || '[]');
-const setQueue = q => { localStorage.setItem(QKEY, JSON.stringify(q)); renderPending(); };
+const queue = () => JSON.parse(store.get(QKEY, '[]'));
+const setQueue = q => { store.set(QKEY, JSON.stringify(q)); renderPending(); };
 function renderPending(){
+  const lines = [];
+  // 私密瀏覽下 Service Worker 註冊會失敗，而且分頁一關 localStorage 就清空，
+  // 待補送的帳會直接消失 —— 這種情況一定要讓使用者看得到
+  if (swFailed) lines.push('⚠️ 可能在私密瀏覽中，暫存的帳關閉分頁就會消失 — 請切回一般瀏覽模式');
   const n = queue().length;
-  $('pending').textContent = n ? `⚠️ ${n} 筆待補送，有網路時自動送出` : '';
+  if (n) lines.push(`⚠️ ${n} 筆待補送，有網路時自動送出`);
+  $('pending').innerHTML = lines.join('<br>');
 }
 async function flush(){
   let q = queue();
@@ -329,7 +343,7 @@ $('save').onclick = async () => {
   try { await send(body); flash('✓ 已記帳','ok'); }
   catch { setQueue([...queue(), body]); flash('沒網路，已暫存','err'); }
 
-  if (picked.type){ counts[picked.type] = (counts[picked.type]||0)+1; localStorage.setItem(CKEY, JSON.stringify(counts)); }
+  if (picked.type){ counts[picked.type] = (counts[picked.type]||0)+1; store.set(CKEY, JSON.stringify(counts)); }
   addLog(summary);
   $('what').value=''; $('amount').value='';       // 人與分類保留，方便連續記帳
   renderCats();
@@ -390,7 +404,10 @@ renderPending(); flush();
 // 註冊 Service Worker：讓頁面存進手機，之後開啟不必等網路。
 // （掛在 Apps Script 時沒有 sw.js，註冊會失敗，直接忽略即可）
 if ('serviceWorker' in navigator) {
-  addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  addEventListener('load', () => navigator.serviceWorker.register('sw.js')
+    .catch(() => { swFailed = true; renderPending(); }));   // 私密瀏覽會在這裡失敗
+} else {
+  swFailed = true; renderPending();
 }
 </script>
 </body>
