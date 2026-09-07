@@ -28,19 +28,6 @@
     font:16px/1.4 -apple-system,"PingFang TC","Helvetica Neue",sans-serif;
     min-height:100dvh;padding-bottom:env(safe-area-inset-bottom);
   }
-  /* 往上滑收起時：內容整塊向下滑出（#done 留在原地不跟著動） */
-  #page{transition:transform .38s cubic-bezier(.4,0,1,1), opacity .38s}
-  /* 用 100vh 而非 105%：百分比是相對元素自身高度，內容少時會滑不出畫面 */
-  #page.leaving{transform:translateY(100vh);opacity:.4}
-
-  /* 收起後的提示，避免畫面全空看起來像壞掉 */
-  #done{
-    position:fixed;inset:0;display:grid;place-items:center;
-    color:var(--muted);font-size:14px;letter-spacing:.6px;
-    opacity:0;pointer-events:none;transition:opacity .3s .2s;
-  }
-  #done.show{opacity:.75}
-
   /* ── 上半部：從畫面頂端滑下的輸入卡 ───────────────── */
   .sheet{
     position:relative;z-index:10;
@@ -129,7 +116,7 @@
   #save.err{background:var(--warn)}
 
   /* ── 下半部：鍵盤區／已記錄，被蓋住也沒關係 ───────── */
-  .below{padding:16px 20px 0;max-width:480px;margin:0 auto;width:100%}
+  .below{padding:16px 20px 40px;max-width:480px;margin:0 auto;width:100%}
   #pending{font-size:12.5px;color:var(--warn);text-align:center;margin-bottom:10px}
   .below h2{font-size:12px;color:var(--muted);font-weight:400;margin:0 0 7px 2px;letter-spacing:.6px}
   ul{margin:0;padding:0}
@@ -137,27 +124,10 @@
   li span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .empty{justify-content:center;opacity:.6}
 
-  /* ── 緊接在記錄列表下方，隨紀錄增加往下移；不貼齊螢幕底端，
-        避免跟系統真正的 Home Indicator 重疊 ── */
-  .homebar{
-    padding:22px 0 26px;
-    display:flex;flex-direction:column;align-items:center;gap:9px;
-    touch-action:none;user-select:none;-webkit-user-select:none;cursor:grab;
-  }
-  .homebar .hint{
-    font-size:11px;letter-spacing:.6px;color:var(--muted);opacity:.5;transition:.2s;
-  }
-  .homebar .pill{
-    width:132px;height:5px;border-radius:3px;background:var(--muted);opacity:.45;transition:.2s;
-  }
-  .homebar.armed .pill{width:152px;opacity:1;background:var(--accent)}
-  .homebar.armed .hint{opacity:1;color:var(--accent)}
-
   @media (min-width:520px){.sheet{max-width:480px;margin:0 auto;border-radius:0 0 22px 22px}}
 </style>
 </head>
 <body>
-<div id="page">
 
 <div class="sheet">
   <div class="grip"></div>
@@ -192,15 +162,6 @@
   <h2>本次已記錄</h2>
   <ul id="log"><li class="empty">還沒有紀錄</li></ul>
 </div>
-
-<div class="homebar" id="homebar">
-  <div class="hint">往上滑 · 收起</div>
-  <div class="pill"></div>
-</div>
-
-</div><!-- /#page -->
-
-<div id="done">記完了 · 按側邊按鈕鎖定螢幕</div>
 
 <script>
 const FORM = 'https://docs.google.com/forms/d/e/1FAIpQLSfjr8XBxwKH7Op2yxthGAol5vPFwjpe_g4F-0yp1t8LMoGN1w/formResponse';
@@ -323,12 +284,21 @@ function flash(msg, cls){
   clearTimeout(b._t); b._t = setTimeout(() => { b.textContent='儲存'; b.className=''; }, 1600);
 }
 
+/* 只保留最近 MAX_LOG 筆。這份清單純粹是畫面上的暫存，
+   從未寫進 localStorage，所以關掉網頁就會消失。            */
+const MAX_LOG = 4;
+
 function addLog(text){
   const ul = $('log');
   if (!ul.dataset.on){ ul.innerHTML=''; ul.dataset.on='1'; }
   const li = document.createElement('li');
-  li.innerHTML = `<span>${text}</span><span>${new Date().toTimeString().slice(0,5)}</span>`;
+  const what = document.createElement('span');
+  const when = document.createElement('span');
+  what.textContent = text;                                   // 用 textContent，項目名稱含 < > 也不會壞版
+  when.textContent = new Date().toTimeString().slice(0,5);
+  li.append(what, when);
   ul.prepend(li);
+  while (ul.children.length > MAX_LOG) ul.lastElementChild.remove();
 }
 
 $('save').onclick = async () => {
@@ -351,53 +321,6 @@ $('save').onclick = async () => {
 
 $('what').addEventListener('keydown', e => { if (e.key==='Enter') $('amount').focus(); });
 $('amount').addEventListener('keydown', e => { if (e.key==='Enter') $('save').click(); });
-
-/* ── Home Indicator：往上滑 → 內容向下滑出收起 ──
-   網頁無權關閉自己的分頁，也無權鎖定手機，所以這裡只負責「讓開畫面」，
-   鎖定交給實體側邊按鈕（一次按壓，比任何軟體方案都快且沒有確認框）。 */
-const SWIPE_THRESHOLD = 45;          // 往上滑超過幾 px 才算數
-
-const bar = $('homebar');
-const page = $('page');
-let startY = null, dy = 0;
-
-bar.addEventListener('pointerdown', e => {
-  startY = e.clientY; dy = 0;
-  bar.setPointerCapture(e.pointerId);
-});
-bar.addEventListener('pointermove', e => {
-  if (startY === null) return;
-  dy = startY - e.clientY;                                   // 往上滑為正值
-  if (dy > 0) {                                              // 讓畫面跟著手指走一點，有拉扯感
-    page.style.transform = `translateY(${-Math.min(dy, 90) * 0.35}px)`;
-    bar.classList.toggle('armed', dy >= SWIPE_THRESHOLD);
-  }
-});
-bar.addEventListener('pointerup', () => {
-  page.style.transform = '';
-  if (dy >= SWIPE_THRESHOLD) dismiss();
-  else bar.classList.remove('armed');
-  startY = null;
-});
-bar.addEventListener('pointercancel', () => {
-  page.style.transform = ''; bar.classList.remove('armed'); startY = null;
-});
-
-function dismiss(){
-  bar.classList.remove('armed');
-  page.classList.add('leaving');      // 內容向下滑出
-  $('done').classList.add('show');    // 露出「按側邊按鈕鎖定」提示
-  try { window.close(); } catch (e) {}  // 分頁若是被 script 開的就會關掉，多數情況不會
-}
-
-// 回到這一頁時把收起狀態還原，否則下次看到的會是空畫面
-const restore = () => {
-  page.classList.remove('leaving');
-  page.style.transform = '';
-  $('done').classList.remove('show');
-};
-addEventListener('pageshow', restore);
-addEventListener('visibilitychange', () => { if (!document.hidden) restore(); });
 
 renderPending(); flush();
 
