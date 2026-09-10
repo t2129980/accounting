@@ -1,6 +1,11 @@
 # 本機開發設定
 .claude/
+.DS_Store
 
 # 不上線的檔案
 Code.gs
 index-large.html
+
+# Apps Script 原始檔（不部署到 GitHub Pages）
+apps-script/
+LEDGER.md

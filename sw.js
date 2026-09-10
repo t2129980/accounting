@@ -5,8 +5,12 @@
  * 完全不等網路 → 敲兩下就是瞬開。網路只有在按「儲存」送資料時才會用到。
  */
 
-const CACHE = 'jz-v9';   // 改版時把版本號 +1，手機才會盡快換到新版
-const ASSETS = ['./', './index.html', './manifest.json'];
+const CACHE = 'jz-v10';   // 改版時把版本號 +1，手機才會盡快換到新版
+const ASSETS = [
+  './', './index.html', './manifest.json',
+  './icons/icon-180.png', './icons/icon-152.png', './icons/icon-120.png',
+  './icons/icon-192.png', './icons/icon-32.png'
+];
 
 // 安裝時先把頁面抓下來存好
 self.addEventListener('install', e => {
